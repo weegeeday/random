@@ -131,10 +131,18 @@ fi
 info "Integrating GUI launchers into Bazzite desktop environment..."
 
 # Extract ParaView icon from container to host icon cache for guaranteed icon display
-distrobox enter --no-tty "${CONTAINER_NAME}" -- cat /usr/share/icons/hicolor/scalable/apps/paraview.svg \
-    > "${ICONS_DIR}/scalable/apps/paraview.svg" 2>/dev/null || true
-distrobox enter --no-tty "${CONTAINER_NAME}" -- cat /usr/share/icons/hicolor/scalable/apps/paraview.svg \
-    > "${ICONS_DIR}/scalable/apps/${CONTAINER_NAME}-paraview.svg" 2>/dev/null || true
+for size in 16x16 22x22 32x32 48x48 64x64 96x96 128x128 256x256; do
+    mkdir -p "${ICONS_DIR}/${size}/apps"
+    distrobox enter --no-tty "${CONTAINER_NAME}" -- sh -c "
+        if [ -f /usr/share/icons/hicolor/${size}/apps/paraview.png ]; then
+            cat /usr/share/icons/hicolor/${size}/apps/paraview.png
+        elif [ -f /usr/share/pixmaps/paraview.png ]; then
+            cat /usr/share/pixmaps/paraview.png
+        fi
+    " > "${ICONS_DIR}/${size}/apps/paraview.png" 2>/dev/null || true
+    # Remove if empty
+    [ -s "${ICONS_DIR}/${size}/apps/paraview.png" ] || rm -f "${ICONS_DIR}/${size}/apps/paraview.png"
+done
 
 # Try distrobox-export first
 PARAVIEW_EXPORTED=false
@@ -143,7 +151,7 @@ if distrobox enter --no-tty "${CONTAINER_NAME}" -- distrobox-export --app paravi
     ok "ParaView exported via distrobox-export."
 fi
 
-# Ensure ParaView launcher exists and has reliable Wayland/X11 flags
+# Ensure ParaView launcher exists and has reliable Wayland/X11 flags and search keywords
 PARAVIEW_DESKTOP="${APPS_DIR}/${CONTAINER_NAME}-paraview.desktop"
 cat << EOF > "${PARAVIEW_DESKTOP}"
 [Desktop Entry]
@@ -155,6 +163,7 @@ Exec=distrobox enter ${CONTAINER_NAME} -- env QT_QPA_PLATFORM=xcb paraview %U
 Icon=paraview
 Terminal=false
 Categories=Science;Engineering;DataVisualization;Graphics;
+Keywords=para;paraview;foam;cfd;visualization;3d;
 StartupNotify=true
 MimeType=application/x-paraview;
 EOF
@@ -173,6 +182,7 @@ Exec=distrobox enter ${CONTAINER_NAME}
 Icon=utilities-terminal
 Terminal=true
 Categories=Science;Engineering;Development;Education;
+Keywords=foam;openfoam;cfd;solver;simulation;workspace;
 StartupNotify=true
 EOF
 chmod +x "${OPENFOAM_DESKTOP_FILE}"
