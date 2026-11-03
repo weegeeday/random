@@ -51,6 +51,11 @@ rm -f "${APPS_DIR}/openfoam-workspace.desktop"
 rm -f "${APPS_DIR}/${CONTAINER_NAME}"-*.desktop
 rm -f "${HOME}/.local/share/icons/hicolor/"*/*/"${CONTAINER_NAME}"-* 2>/dev/null || true
 
+# Remove any accidental host ~/.bashrc contamination
+if grep -q "openfoam.*etc/bashrc" "${HOME}/.bashrc" 2>/dev/null; then
+    sed -i '/openfoam.*etc\/bashrc/d' "${HOME}/.bashrc" || true
+fi
+
 # Refresh desktop application database
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
