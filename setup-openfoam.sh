@@ -60,7 +60,8 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
         ca-certificates \
         gnupg \
         software-properties-common \
-        libgl1-mesa-glx \
+        libgl1 \
+        libglx-mesa0 \
         libgl1-mesa-dri
 
     # Add official OpenFOAM Debian/Ubuntu repository
