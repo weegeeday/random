@@ -40,6 +40,7 @@ fi
 mkdir -p "${APPS_DIR}"
 mkdir -p "${ICONS_DIR}/scalable/apps"
 mkdir -p "${ICONS_DIR}/48x48/apps"
+mkdir -p "${HOME}/OpenFOAM"
 
 # ------------------------------------------------------------------------------
 # 2. Desktop Integration on Host (Created IMMEDIATELY on the host)
@@ -72,11 +73,12 @@ Type=Application
 Name=OpenFOAM Workspace
 GenericName=CFD Environment
 Comment=Pre-configured OpenFOAM computational fluid dynamics workspace
-Exec=distrobox enter ${CONTAINER_NAME}
+Exec=distrobox enter ${CONTAINER_NAME} -- bash -c 'if [ -x /usr/local/bin/openfoam-workspace ]; then exec /usr/local/bin/openfoam-workspace; else BASHRC=\$(ls -d /usr/lib/openfoam/openfoam*/etc/bashrc 2>/dev/null | head -n1); [ -f "\$BASHRC" ] && source "\$BASHRC"; mkdir -p "\$HOME/OpenFOAM" && cd "\$HOME/OpenFOAM" && exec bash -i; fi'
 Icon=utilities-terminal
 Terminal=true
 Categories=Science;Engineering;Development;Education;
 Keywords=foam;openfoam;cfd;solver;simulation;workspace;
+Path=${HOME}/OpenFOAM
 StartupNotify=true
 EOF
 chmod +x "${OPENFOAM_DESKTOP_FILE}"
@@ -165,6 +167,40 @@ distrobox enter -T --name "${CONTAINER_NAME}" -- bash -c '
             echo "[ -f /etc/profile.d/openfoam.sh ] && source /etc/profile.d/openfoam.sh" | sudo tee -a /etc/bash.bashrc >/dev/null
         fi
     fi
+
+    # Install dedicated OpenFOAM workspace session launcher inside container
+    sudo tee /usr/local/bin/openfoam-workspace >/dev/null << "EOS"
+#!/usr/bin/env bash
+BASHRC_TARGET=\$(ls -d /usr/lib/openfoam/openfoam*/etc/bashrc 2>/dev/null | head -n 1 || true)
+if [ -n "\$BASHRC_TARGET" ] && [ -f "\$BASHRC_TARGET" ]; then
+    source "\$BASHRC_TARGET"
+fi
+
+WORKSPACE="\${HOME}/OpenFOAM"
+mkdir -p "\$WORKSPACE"
+cd "\$WORKSPACE"
+
+echo -e "\e[1;34m========================================================================\e[0m"
+echo -e "\e[1;32m  OpenFOAM Computational Fluid Dynamics (CFD) Workspace\e[0m"
+echo -e "\e[1;34m========================================================================\e[0m"
+echo -e "  \e[1mWorking Directory:\e[0m  \e[36m\$PWD\e[0m"
+if [ -n "\${WM_PROJECT_VERSION:-}" ]; then
+    echo -e "  \e[1mOpenFOAM Version:\e[0m   OpenFOAM-\$WM_PROJECT_VERSION"
+fi
+echo -e "  \e[1mSolvers:\e[0m            simpleFoam, pimpleFoam, interFoam, icoFoam"
+echo -e "  \e[1mMeshing:\e[0m            blockMesh, snappyHexMesh"
+echo -e "  \e[1mVisualization:\e[0m      paraFoam, paraview"
+if [ -n "\${FOAM_TUTORIALS:-}" ]; then
+    echo -e "  \e[1mTutorials:\e[0m          \\\$FOAM_TUTORIALS"
+fi
+echo -e "\e[1;34m========================================================================\e[0m"
+echo -e "  Tip: Copy a tutorial to get started:"
+echo -e "       \e[33mcp -r \\\$FOAM_TUTORIALS/incompressible/simpleFoam/pitzDaily .\e[0m"
+echo -e "\e[1;34m========================================================================\e[0m\n"
+
+exec bash --login -i
+EOS
+    sudo chmod +x /usr/local/bin/openfoam-workspace
 ' < /dev/null || error "Failed to install OpenFOAM packages inside container."
 
 ok "OpenFOAM and ParaView installed and configured inside container."
