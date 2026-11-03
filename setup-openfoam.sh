@@ -53,7 +53,7 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
 
     export DEBIAN_FRONTEND=noninteractive
 
-    # Install repository dependencies and graphics libraries
+    # Install repository dependencies and graphics libraries (libgl1 replaces obsolete libgl1-mesa-glx)
     sudo apt-get update -y
     sudo apt-get install -y --no-install-recommends \
         curl \
