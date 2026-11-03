@@ -53,7 +53,7 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
 
     export DEBIAN_FRONTEND=noninteractive
 
-    # Install repository dependencies and graphics libraries (libgl1 replaces obsolete libgl1-mesa-glx)
+    # Install repository dependencies and graphics libraries
     sudo apt-get update -y
     sudo apt-get install -y --no-install-recommends \
         curl \
@@ -73,9 +73,12 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
     sudo apt-get update -y
     sudo apt-get install -y openfoam-default paraview
 
-    # Auto-source OpenFOAM environment in the container bash shell
-    if ! grep -q "openfoam/etc/bashrc" "$HOME/.bashrc" 2>/dev/null; then
-        echo "source /usr/lib/openfoam/openfoam/etc/bashrc" >> "$HOME/.bashrc"
+    # Find the installed OpenFOAM bashrc (handles versioned paths like openfoam2412)
+    BASHRC_TARGET=$(ls -d /usr/lib/openfoam/openfoam*/etc/bashrc 2>/dev/null | head -n 1 || true)
+
+    if [ -n "$BASHRC_TARGET" ]; then
+        touch "$HOME/.bashrc"
+        grep -Fq "$BASHRC_TARGET" "$HOME/.bashrc" || echo "source $BASHRC_TARGET" >> "$HOME/.bashrc"
     fi
 ' || error "Failed to install OpenFOAM packages inside container."
 
@@ -107,9 +110,16 @@ EOF
 
 chmod +x "${OPENFOAM_DESKTOP_FILE}"
 
-# Refresh application database caches
+# Refresh KDE / desktop application database caches
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
+fi
+
+# Refresh KDE Plasma menu cache specifically
+if command -v kbuildsycoca6 >/dev/null 2>&1; then
+    kbuildsycoca6 >/dev/null 2>&1 || true
+elif command -v kbuildsycoca5 >/dev/null 2>&1; then
+    kbuildsycoca5 >/dev/null 2>&1 || true
 fi
 
 ok "Desktop integrations generated successfully."
@@ -118,7 +128,7 @@ ok "Desktop integrations generated successfully."
 # 5. Verification Test
 # ------------------------------------------------------------------------------
 info "Testing OpenFOAM environment execution..."
-if distrobox enter "${CONTAINER_NAME}" -- bash -c "source /usr/lib/openfoam/openfoam/etc/bashrc && foamVersion" >/dev/null 2>&1; then
+if distrobox enter "${CONTAINER_NAME}" -- bash -ic "foamVersion" >/dev/null 2>&1; then
     ok "Verification passed! OpenFOAM is functioning correctly."
 else
     warn "Automated test returned an exit code warning. Check 'distrobox enter ${CONTAINER_NAME}' manually."
