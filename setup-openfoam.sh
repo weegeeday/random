@@ -42,23 +42,77 @@ mkdir -p "${ICONS_DIR}/scalable/apps"
 mkdir -p "${ICONS_DIR}/48x48/apps"
 
 # ------------------------------------------------------------------------------
-# 2. Container Initialization
+# 2. Desktop Integration on Host (Created IMMEDIATELY on the host)
 # ------------------------------------------------------------------------------
-if distrobox list | grep -qw "${CONTAINER_NAME}"; then
+info "Registering desktop shortcuts in Bazzite application menu..."
+
+# 1. ParaView GUI launcher
+PARAVIEW_DESKTOP="${APPS_DIR}/${CONTAINER_NAME}-paraview.desktop"
+cat << EOF > "${PARAVIEW_DESKTOP}"
+[Desktop Entry]
+Type=Application
+Name=ParaView (${CONTAINER_NAME})
+GenericName=3D Data Visualizer
+Comment=Parallel Visualization Application (via ${CONTAINER_NAME})
+Exec=distrobox enter ${CONTAINER_NAME} -- env QT_QPA_PLATFORM=xcb paraview %U
+Icon=paraview
+Terminal=false
+Categories=Science;Engineering;DataVisualization;Graphics;
+Keywords=para;paraview;foam;cfd;visualization;3d;
+StartupNotify=true
+MimeType=application/x-paraview;
+EOF
+chmod +x "${PARAVIEW_DESKTOP}"
+
+# 2. OpenFOAM Workspace launcher
+OPENFOAM_DESKTOP_FILE="${APPS_DIR}/openfoam-workspace.desktop"
+cat << EOF > "${OPENFOAM_DESKTOP_FILE}"
+[Desktop Entry]
+Type=Application
+Name=OpenFOAM Workspace
+GenericName=CFD Environment
+Comment=Pre-configured OpenFOAM computational fluid dynamics workspace
+Exec=distrobox enter ${CONTAINER_NAME}
+Icon=utilities-terminal
+Terminal=true
+Categories=Science;Engineering;Development;Education;
+Keywords=foam;openfoam;cfd;solver;simulation;workspace;
+StartupNotify=true
+EOF
+chmod +x "${OPENFOAM_DESKTOP_FILE}"
+
+# Refresh application databases immediately so shortcuts are indexed right away
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
+fi
+
+if command -v kbuildsycoca6 >/dev/null 2>&1; then
+    kbuildsycoca6 >/dev/null 2>&1 || true
+elif command -v kbuildsycoca5 >/dev/null 2>&1; then
+    kbuildsycoca5 >/dev/null 2>&1 || true
+fi
+
+ok "Desktop shortcuts registered on host successfully."
+
+# ------------------------------------------------------------------------------
+# 3. Container Initialization
+# ------------------------------------------------------------------------------
+if distrobox list < /dev/null | grep -qw "${CONTAINER_NAME}"; then
     info "Container '${CONTAINER_NAME}' already exists. Reusing existing container."
 else
     info "Creating Distrobox container '${CONTAINER_NAME}' with image '${CONTAINER_IMAGE}'..."
-    distrobox create --yes --image "${CONTAINER_IMAGE}" --name "${CONTAINER_NAME}" || error "Failed to create container."
+    distrobox create --yes --image "${CONTAINER_IMAGE}" --name "${CONTAINER_NAME}" < /dev/null || error "Failed to create container."
     ok "Container created successfully."
 fi
 
 # ------------------------------------------------------------------------------
-# 3. In-Container Package Installation & Environment Setup
+# 4. In-Container Package Installation & Environment Setup
 # ------------------------------------------------------------------------------
 info "Automating package installation inside '${CONTAINER_NAME}'..."
 info "Downloading and configuring OpenFOAM + ParaView. Please wait..."
 
-distrobox enter --no-tty "${CONTAINER_NAME}" -- bash -c '
+# CRITICAL: Always redirect stdin from /dev/null (< /dev/null) so distrobox enter does not consume the curl stream!
+distrobox enter -T --name "${CONTAINER_NAME}" -- bash -c '
     set -Eeuo pipefail
 
     export DEBIAN_FRONTEND=noninteractive
@@ -92,15 +146,11 @@ distrobox enter --no-tty "${CONTAINER_NAME}" -- bash -c '
 
     # Update package lists and install OpenFOAM and ParaView
     sudo apt-get update -y
-    sudo apt-get install -y openfoam-default paraview || {
-        # Fallback to latest explicit package version if openfoam-default meta-package has conflicts
-        LATEST_PKG=$(apt-cache search "^openfoam[0-9]+-default" | sort -V | tail -n1 | awk "{print \$1}")
-        if [ -n "$LATEST_PKG" ]; then
-            sudo apt-get install -y "$LATEST_PKG" paraview
-        else
-            exit 1
+    if ! sudo apt-get install -y openfoam-default paraview 2>/dev/null; then
+        if ! sudo apt-get install -y openfoam2412-default paraview 2>/dev/null; then
+            sudo apt-get install -y openfoam2406-default paraview
         fi
-    }
+    fi
 
     # Locate installed OpenFOAM bashrc
     BASHRC_TARGET=$(ls -d /usr/lib/openfoam/openfoam*/etc/bashrc 2>/dev/null | head -n 1 || true)
@@ -115,7 +165,7 @@ distrobox enter --no-tty "${CONTAINER_NAME}" -- bash -c '
             echo "[ -f /etc/profile.d/openfoam.sh ] && source /etc/profile.d/openfoam.sh" | sudo tee -a /etc/bash.bashrc >/dev/null
         fi
     fi
-' || error "Failed to install OpenFOAM packages inside container."
+' < /dev/null || error "Failed to install OpenFOAM packages inside container."
 
 ok "OpenFOAM and ParaView installed and configured inside container."
 
@@ -126,67 +176,24 @@ if grep -q "openfoam.*etc/bashrc" "${HOME}/.bashrc" 2>/dev/null; then
 fi
 
 # ------------------------------------------------------------------------------
-# 4. Desktop Menu Integration (Non-Terminal User Access)
+# 5. Icon Extraction & Cache Refresh
 # ------------------------------------------------------------------------------
-info "Integrating GUI launchers into Bazzite desktop environment..."
+info "Caching application icons..."
 
-# Extract ParaView icon from container to host icon cache for guaranteed icon display
 for size in 16x16 22x22 32x32 48x48 64x64 96x96 128x128 256x256; do
     mkdir -p "${ICONS_DIR}/${size}/apps"
-    distrobox enter --no-tty "${CONTAINER_NAME}" -- sh -c "
+    distrobox enter -T --name "${CONTAINER_NAME}" -- sh -c "
         if [ -f /usr/share/icons/hicolor/${size}/apps/paraview.png ]; then
             cat /usr/share/icons/hicolor/${size}/apps/paraview.png
         elif [ -f /usr/share/pixmaps/paraview.png ]; then
             cat /usr/share/pixmaps/paraview.png
         fi
-    " > "${ICONS_DIR}/${size}/apps/paraview.png" 2>/dev/null || true
-    # Remove if empty
+    " < /dev/null > "${ICONS_DIR}/${size}/apps/paraview.png" 2>/dev/null || true
     [ -s "${ICONS_DIR}/${size}/apps/paraview.png" ] || rm -f "${ICONS_DIR}/${size}/apps/paraview.png"
 done
 
-# Try distrobox-export first
-PARAVIEW_EXPORTED=false
-if distrobox enter --no-tty "${CONTAINER_NAME}" -- distrobox-export --app paraview 2>/dev/null; then
-    PARAVIEW_EXPORTED=true
-    ok "ParaView exported via distrobox-export."
-fi
-
-# Ensure ParaView launcher exists and has reliable Wayland/X11 flags and search keywords
-PARAVIEW_DESKTOP="${APPS_DIR}/${CONTAINER_NAME}-paraview.desktop"
-cat << EOF > "${PARAVIEW_DESKTOP}"
-[Desktop Entry]
-Type=Application
-Name=ParaView (${CONTAINER_NAME})
-GenericName=3D Data Visualizer
-Comment=Parallel Visualization Application (via ${CONTAINER_NAME})
-Exec=distrobox enter ${CONTAINER_NAME} -- env QT_QPA_PLATFORM=xcb paraview %U
-Icon=paraview
-Terminal=false
-Categories=Science;Engineering;DataVisualization;Graphics;
-Keywords=para;paraview;foam;cfd;visualization;3d;
-StartupNotify=true
-MimeType=application/x-paraview;
-EOF
-chmod +x "${PARAVIEW_DESKTOP}"
-ok "ParaView desktop launcher configured."
-
-# Ensure dedicated OpenFOAM workspace shortcut exists
-OPENFOAM_DESKTOP_FILE="${APPS_DIR}/openfoam-workspace.desktop"
-cat << EOF > "${OPENFOAM_DESKTOP_FILE}"
-[Desktop Entry]
-Type=Application
-Name=OpenFOAM Workspace
-GenericName=CFD Environment
-Comment=Pre-configured OpenFOAM computational fluid dynamics workspace
-Exec=distrobox enter ${CONTAINER_NAME}
-Icon=utilities-terminal
-Terminal=true
-Categories=Science;Engineering;Development;Education;
-Keywords=foam;openfoam;cfd;solver;simulation;workspace;
-StartupNotify=true
-EOF
-chmod +x "${OPENFOAM_DESKTOP_FILE}"
-ok "OpenFOAM Workspace launcher configured."
+# Try distrobox-export in background as supplementary
+distrobox enter -T --name "${CONTAINER_NAME}" -- distrobox-export --app paraview < /dev/null >/dev/null 2>&1 || true
 
 # Refresh desktop database and KDE Plasma application menu caches
 if command -v update-desktop-database >/dev/null 2>&1; then
@@ -200,10 +207,10 @@ elif command -v kbuildsycoca5 >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# 5. Verification Test & Non-Terminal Feedback
+# 6. Verification Test & Non-Terminal Feedback
 # ------------------------------------------------------------------------------
 info "Testing OpenFOAM environment execution..."
-if distrobox enter --no-tty "${CONTAINER_NAME}" -- bash -ic "foamVersion" >/dev/null 2>&1; then
+if distrobox enter -T --name "${CONTAINER_NAME}" -- bash -ic "foamVersion" < /dev/null >/dev/null 2>&1; then
     ok "Verification passed! OpenFOAM is functioning correctly."
 else
     warn "Automated test returned an exit code warning. Check container manually."
