@@ -27,7 +27,7 @@ command -v distrobox >/dev/null 2>&1 || error "Distrobox is not installed or not
 # ------------------------------------------------------------------------------
 if distrobox list | grep -qw "${CONTAINER_NAME}"; then
     info "Unexporting ParaView from host desktop..."
-    distrobox enter "${CONTAINER_NAME}" -- distrobox-export --app paraview --delete >/dev/null 2>&1 || true
+    distrobox enter --no-tty "${CONTAINER_NAME}" -- distrobox-export --app paraview --delete >/dev/null 2>&1 || true
 
     info "Stopping Distrobox container '${CONTAINER_NAME}'..."
     distrobox stop --yes "${CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -61,15 +61,26 @@ if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
 fi
 
+if command -v kbuildsycoca6 >/dev/null 2>&1; then
+    kbuildsycoca6 >/dev/null 2>&1 || true
+elif command -v kbuildsycoca5 >/dev/null 2>&1; then
+    kbuildsycoca5 >/dev/null 2>&1 || true
+fi
+
 ok "Desktop integrations cleaned up."
 
 # ------------------------------------------------------------------------------
-# 4. Verification
+# 4. Verification & Notification
 # ------------------------------------------------------------------------------
 echo ""
 echo "=========================================================================="
 if ! distrobox list | grep -qw "${CONTAINER_NAME}"; then
     ok "Uninstallation complete! '${CONTAINER_NAME}' and all shortcuts removed."
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -a "OpenFOAM Installer" -i "edit-delete" \
+            "OpenFOAM Removed" \
+            "Container '${CONTAINER_NAME}' and desktop launchers have been removed." 2>/dev/null || true
+    fi
 else
     warn "Container '${CONTAINER_NAME}' may still be listed. Run 'distrobox list' to verify."
 fi
