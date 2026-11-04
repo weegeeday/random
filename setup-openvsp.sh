@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Bazzite OpenVSP + VSPAERO Distrobox Provisioner & Desktop Integrator
+# Bazzite OpenVSP + VSPAERO Distrobox Provisioner & Desktop 
 # ==============================================================================
 set -Eeuo pipefail
 
@@ -33,57 +33,7 @@ main() {
     mkdir -p "${APPS_DIR}"
 
     # --------------------------------------------------------------------------
-    # 2. Desktop Menu Integration (Generated First on Host)
-    # --------------------------------------------------------------------------
-    info "Generating KDE Plasma desktop launchers on host..."
-
-    OPENVSP_GUI_DESKTOP="${APPS_DIR}/openvsp-gui.desktop"
-    cat << EOF > "${OPENVSP_GUI_DESKTOP}"
-[Desktop Entry]
-Type=Application
-Name=OpenVSP
-GenericName=Aircraft Geometry Modeling
-Comment=NASA Open Vehicle Sketch Pad Parametric Aircraft Geometry Tool
-Exec=distrobox-enter -n ${CONTAINER_NAME} -- vsp
-Icon=applications-engineering
-Terminal=false
-Categories=Science;Engineering;
-StartupNotify=true
-EOF
-
-    TERM_EXEC="ptyxis --"
-    if ! command -v ptyxis >/dev/null 2>&1; then
-        if command -v konsole >/dev/null 2>&1; then
-            TERM_EXEC="konsole -e"
-        else
-            TERM_EXEC="xterm -e"
-        fi
-    fi
-
-    OPENVSP_CLI_DESKTOP="${APPS_DIR}/openvsp-workspace.desktop"
-    cat << EOF > "${OPENVSP_CLI_DESKTOP}"
-[Desktop Entry]
-Type=Application
-Name=OpenVSP CLI Workspace
-GenericName=VSPAERO & Scripting Terminal
-Comment=Terminal environment for VSPAERO solver and vspscript automation
-Exec=${TERM_EXEC} distrobox enter ${CONTAINER_NAME}
-Icon=utilities-terminal
-Terminal=false
-Categories=Science;Engineering;
-StartupNotify=true
-EOF
-
-    chmod +x "${OPENVSP_GUI_DESKTOP}" "${OPENVSP_CLI_DESKTOP}"
-
-    update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
-    kbuildsycoca6 --noincremental >/dev/null 2>&1 || kbuildsycoca5 --noincremental >/dev/null 2>&1 || true
-    killall krunner >/dev/null 2>&1 || true
-
-    ok "Desktop launchers created and indexed."
-
-    # --------------------------------------------------------------------------
-    # 3. Container Initialization
+    # 2. Container Initialization
     # --------------------------------------------------------------------------
     if distrobox list | grep -qw "${CONTAINER_NAME}"; then
         info "Container '${CONTAINER_NAME}' already exists. Reusing existing container."
@@ -94,7 +44,7 @@ EOF
     fi
 
     # --------------------------------------------------------------------------
-    # 4. In-Container Package Installation & OpenVSP Setup
+    # 3. In-Container Package Installation & OpenVSP Setup
     # --------------------------------------------------------------------------
     info "Provisioning OpenVSP inside '${CONTAINER_NAME}'..."
 
@@ -143,6 +93,56 @@ EOF
     ' </dev/null || error "Failed to install OpenVSP inside container."
 
     ok "OpenVSP and VSPAERO installed and configured."
+
+    # --------------------------------------------------------------------------
+    # 4. Desktop Menu Integration
+    # --------------------------------------------------------------------------
+    info "Generating KDE Plasma desktop launchers on host..."
+
+    OPENVSP_GUI_DESKTOP="${APPS_DIR}/openvsp-gui.desktop"
+    cat > "${OPENVSP_GUI_DESKTOP}" << EOF
+[Desktop Entry]
+Type=Application
+Name=OpenVSP
+GenericName=Aircraft Geometry Modeling
+Comment=NASA Open Vehicle Sketch Pad Parametric Aircraft Geometry Tool
+Exec=distrobox-enter --name ${CONTAINER_NAME} -- vsp
+Icon=applications-engineering
+Terminal=false
+Categories=Science;Engineering;
+StartupNotify=true
+EOF
+
+    OPENVSP_CLI_DESKTOP="${APPS_DIR}/openvsp-workspace.desktop"
+    if command -v ptyxis >/dev/null 2>&1; then
+        TERMINAL_COMMAND="ptyxis -- distrobox-enter --name ${CONTAINER_NAME} -- bash -l"
+    elif command -v konsole >/dev/null 2>&1; then
+        TERMINAL_COMMAND="konsole -e distrobox-enter --name ${CONTAINER_NAME} -- bash -l"
+    elif command -v xterm >/dev/null 2>&1; then
+        TERMINAL_COMMAND="xterm -e distrobox-enter --name ${CONTAINER_NAME} -- bash -l"
+    else
+        error "No supported terminal emulator found (ptyxis, konsole, or xterm)."
+    fi
+
+    cat > "${OPENVSP_CLI_DESKTOP}" << EOF
+[Desktop Entry]
+Type=Application
+Name=OpenVSP CLI Workspace
+GenericName=VSPAERO & Scripting Terminal
+Comment=Terminal environment for VSPAERO solver and vspscript automation
+Exec=${TERMINAL_COMMAND}
+Icon=utilities-terminal
+Terminal=false
+Categories=Science;Engineering;
+StartupNotify=true
+EOF
+
+    chmod 644 "${OPENVSP_GUI_DESKTOP}" "${OPENVSP_CLI_DESKTOP}"
+    update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
+    kbuildsycoca6 --noincremental >/dev/null 2>&1 || kbuildsycoca5 --noincremental >/dev/null 2>&1 || true
+    killall krunner >/dev/null 2>&1 || true
+
+    ok "Desktop launchers created and indexed."
 
     echo ""
     echo "=========================================================================="
