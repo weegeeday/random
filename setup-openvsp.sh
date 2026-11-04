@@ -51,6 +51,9 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
     set -Eeuo pipefail
     export DEBIAN_FRONTEND=noninteractive
 
+    # Clear any interrupted dpkg state from prior runs
+    sudo dpkg --remove --force-remove-reinstreq openvsp >/dev/null 2>&1 || true
+
     # Install runtime, graphics, and desktop-file-utils (required by openvsp.postinst)
     sudo apt-get update -y
     sudo apt-get install -y --no-install-recommends \
@@ -82,35 +85,42 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
     sudo apt-get install -y /tmp/openvsp.deb
     rm -f /tmp/openvsp.deb
 
-    # Ensure container-side .desktop file exists at standard path for distrobox-export
-    if [ ! -f /usr/share/applications/openvsp.desktop ]; then
-        sudo mkdir -p /usr/share/applications
-        sudo tee /usr/share/applications/openvsp.desktop >/dev/null << "INNER_EOF"
-[Desktop Entry]
-Type=Application
-Name=OpenVSP
-GenericName=Aircraft Geometry Modeling
-Comment=NASA Open Vehicle Sketch Pad Parametric Aircraft Geometry Tool
-Exec=vsp
-Icon=applications-engineering
-Terminal=false
-Categories=Science;Engineering;
-StartupNotify=true
-INNER_EOF
+    # Ensure all OpenVSP binaries are symlinked into /usr/local/bin
+    VSP_BIN=$(find /opt /usr -name "vsp" -type f -executable 2>/dev/null | head -n 1 || true)
+    if [ -n "$VSP_BIN" ]; then
+        VSP_DIR=$(dirname "$VSP_BIN")
+        for bin in vsp vspaero vspscript vspviewer vsploads; do
+            if [ -f "$VSP_DIR/$bin" ]; then
+                sudo ln -sf "$VSP_DIR/$bin" "/usr/local/bin/$bin"
+            fi
+        done
     fi
 ' || error "Failed to install OpenVSP inside container."
 
 ok "OpenVSP and VSPAERO installed and configured."
 
 # ------------------------------------------------------------------------------
-# 4. Desktop Menu Integration (GUI + CLI Launchers)
+# 4. Desktop Menu Integration (Direct Host .desktop Generation)
 # ------------------------------------------------------------------------------
-info "Integrating GUI launchers into Bazzite KDE desktop environment..."
+info "Integrating GUI and CLI launchers into Bazzite KDE desktop environment..."
 
-# Export OpenVSP GUI app to host
-distrobox enter "${CONTAINER_NAME}" -- distrobox-export --app openvsp || warn "distrobox-export failed, creating custom desktop file instead."
+# 1. Create OpenVSP GUI Launcher directly on host (bypasses distrobox-export naming issues)
+OPENVSP_GUI_DESKTOP="${APPS_DIR}/openvsp-gui.desktop"
 
-# Detect host terminal emulator for CLI workspace
+cat << EOF > "${OPENVSP_GUI_DESKTOP}"
+[Desktop Entry]
+Type=Application
+Name=OpenVSP
+GenericName=Aircraft Geometry Modeling
+Comment=NASA Open Vehicle Sketch Pad Parametric Aircraft Geometry Tool
+Exec=distrobox-enter -n ${CONTAINER_NAME} -- vsp
+Icon=applications-engineering
+Terminal=false
+Categories=Science;Engineering;
+StartupNotify=true
+EOF
+
+# 2. Detect host terminal emulator for CLI workspace
 TERM_EXEC="ptyxis --"
 if ! command -v ptyxis >/dev/null 2>&1; then
     if command -v konsole >/dev/null 2>&1; then
@@ -120,7 +130,7 @@ if ! command -v ptyxis >/dev/null 2>&1; then
     fi
 fi
 
-# Ensure a dedicated OpenVSP CLI workspace shortcut (for VSPAERO / vspscript) exists
+# 3. Create OpenVSP CLI Workspace Launcher
 OPENVSP_CLI_DESKTOP="${APPS_DIR}/openvsp-workspace.desktop"
 
 cat << EOF > "${OPENVSP_CLI_DESKTOP}"
@@ -136,7 +146,7 @@ Categories=Science;Engineering;
 StartupNotify=true
 EOF
 
-chmod +x "${OPENVSP_CLI_DESKTOP}"
+chmod +x "${OPENVSP_GUI_DESKTOP}" "${OPENVSP_CLI_DESKTOP}"
 
 # Refresh desktop database and KDE sycoca cache
 if command -v update-desktop-database >/dev/null 2>&1; then
