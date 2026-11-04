@@ -29,8 +29,11 @@ else
 fi
 
 info "Cleaning up desktop shortcuts and refreshing KDE cache..."
-rm -f "${APPS_DIR}/openvsp-workspace.desktop"
-rm -f "${APPS_DIR}/${CONTAINER_NAME}"-*.desktop
+rm -f \
+    "${APPS_DIR}/openvsp-gui.desktop" \
+    "${APPS_DIR}/openvsp-workspace.desktop"
+find "${APPS_DIR}" -maxdepth 1 -type f \
+    -name "${CONTAINER_NAME}-*.desktop" -delete
 
 update-desktop-database "${APPS_DIR}" >/dev/null 2>&1 || true
 kbuildsycoca6 --noincremental >/dev/null 2>&1 || kbuildsycoca5 --noincremental >/dev/null 2>&1 || true
