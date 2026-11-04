@@ -51,12 +51,14 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
     set -Eeuo pipefail
     export DEBIAN_FRONTEND=noninteractive
 
-    # Install runtime and graphics dependencies for OpenVSP & FLTK GUI
+    # Install runtime, graphics, and desktop-file-utils (required by openvsp.postinst)
     sudo apt-get update -y
     sudo apt-get install -y --no-install-recommends \
         curl \
         wget \
         ca-certificates \
+        desktop-file-utils \
+        xdg-utils \
         libgl1 \
         libglx-mesa0 \
         libgl1-mesa-dri \
@@ -80,31 +82,22 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
     sudo apt-get install -y /tmp/openvsp.deb
     rm -f /tmp/openvsp.deb
 
-    # Symlink binaries from /opt/OpenVSP* into /usr/local/bin if not already in PATH
-    VSP_BIN=$(find /opt /usr -name "vsp" -type f -executable 2>/dev/null | head -n 1 || true)
-    if [ -n "$VSP_BIN" ]; then
-        VSP_DIR=$(dirname "$VSP_BIN")
-        for bin in vsp vspaero vspscript vspviewer vsploads; do
-            if [ -f "$VSP_DIR/$bin" ]; then
-                sudo ln -sf "$VSP_DIR/$bin" "/usr/local/bin/$bin"
-            fi
-        done
-    fi
-
-    # Create container-side .desktop file so distrobox-export works cleanly
-    sudo mkdir -p /usr/share/applications
-    sudo tee /usr/share/applications/openvsp.desktop >/dev/null << "INNER_EOF"
+    # Ensure container-side .desktop file exists at standard path for distrobox-export
+    if [ ! -f /usr/share/applications/openvsp.desktop ]; then
+        sudo mkdir -p /usr/share/applications
+        sudo tee /usr/share/applications/openvsp.desktop >/dev/null << "INNER_EOF"
 [Desktop Entry]
 Type=Application
 Name=OpenVSP
 GenericName=Aircraft Geometry Modeling
 Comment=NASA Open Vehicle Sketch Pad Parametric Aircraft Geometry Tool
-Exec=/usr/local/bin/vsp
+Exec=vsp
 Icon=applications-engineering
 Terminal=false
 Categories=Science;Engineering;
 StartupNotify=true
 INNER_EOF
+    fi
 ' || error "Failed to install OpenVSP inside container."
 
 ok "OpenVSP and VSPAERO installed and configured."
