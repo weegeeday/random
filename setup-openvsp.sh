@@ -38,7 +38,7 @@ if distrobox list | grep -qw "${CONTAINER_NAME}"; then
     info "Container '${CONTAINER_NAME}' already exists. Reusing existing container."
 else
     info "Creating Distrobox container '${CONTAINER_NAME}' with image '${CONTAINER_IMAGE}'..."
-    distrobox create --yes --image "${CONTAINER_IMAGE}" --name "${CONTAINER_NAME}" || error "Failed to create container."
+    distrobox create --yes --image "${CONTAINER_IMAGE}" --name "${CONTAINER_NAME}" </dev/null || error "Failed to create container."
     ok "Container created successfully."
 fi
 
@@ -95,7 +95,7 @@ distrobox enter "${CONTAINER_NAME}" -- bash -c '
             fi
         done
     fi
-' || error "Failed to install OpenVSP inside container."
+' </dev/null || error "Failed to install OpenVSP inside container."
 
 ok "OpenVSP and VSPAERO installed and configured."
 
@@ -104,7 +104,7 @@ ok "OpenVSP and VSPAERO installed and configured."
 # ------------------------------------------------------------------------------
 info "Integrating GUI and CLI launchers into Bazzite KDE desktop environment..."
 
-# 1. Create OpenVSP GUI Launcher directly on host (bypasses distrobox-export naming issues)
+# 1. Create OpenVSP GUI Launcher directly on host
 OPENVSP_GUI_DESKTOP="${APPS_DIR}/openvsp-gui.desktop"
 
 cat << EOF > "${OPENVSP_GUI_DESKTOP}"
@@ -167,7 +167,7 @@ ok "Desktop integrations generated successfully."
 # 5. Verification Test
 # ------------------------------------------------------------------------------
 info "Testing OpenVSP CLI & Solver binaries..."
-if distrobox enter "${CONTAINER_NAME}" -- bash -c "command -v vsp && command -v vspaero" >/dev/null 2>&1; then
+if distrobox enter "${CONTAINER_NAME}" -- bash -c "command -v vsp && command -v vspaero" </dev/null >/dev/null 2>&1; then
     ok "Verification passed! OpenVSP ('vsp') and solver ('vspaero') are ready."
 else
     warn "Binary check returned a warning. Check 'distrobox enter ${CONTAINER_NAME}' manually."
